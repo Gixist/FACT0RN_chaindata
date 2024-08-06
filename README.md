@@ -2,24 +2,24 @@
 
 이 문서에서는 Factorn 프로그램의 백업과 복원을 위해 사용되는 두 개의 배치 파일 스크립트에 대해 설명합니다. 하나는 Factorn 데이터를 압축하고 분할하여 백업하는 스크립트이며, 다른 하나는 백업 파일을 다운로드하고 복원하는 스크립트입니다.
 
-## 1\. 백업 스크립트
+## 1\. 백업 스크립트 \(`backup_chaindata.bat`)
 
-이 배치 파일 스크립트는 Factorn 데이터의 백업을 생성하고, 데이터를 ZIP 형식으로 압축한 후, 지정된 크기로 분할합니다.
+이 스크립트는 Factorn 데이터의 체인 상태를 백업하기 위한 스크립트입니다.
 
-### 기능
+#### 기능
 
-* Factorn 데이터 디렉토리에서 특정 파일들을 임시 디렉토리로 복사합니다.
-* 복사된 파일을 ZIP 형식으로 압축합니다.
-* 압축된 파일을 지정된 크기(예: 20MB)로 분할하여 저장합니다.
-* 사용된 임시 파일과 디렉토리를 삭제합니다.
+* Factorn 데이터 디렉토리에서 파일을 임시 디렉토리로 복사
+* 복사된 파일을 ZIP 형식으로 압축
+* 압축된 파일을 지정된 크기(예: 20MB)로 분할
+* 사용된 임시 파일과 디렉토리 삭제
 
-### 사용 방법
+#### 사용 방법
 
-1. **스크립트 저장:** 아래의 스크립트를 `backup.bat` 파일로 저장합니다.
-2. **7-Zip 설치:** 7-Zip이 시스템에 설치되어 있어야 합니다. [7-Zip 공식 웹사이트](https://www.7-zip.org/)에서 다운로드하여 설치하세요.
-3. **스크립트 실행:** `backup.bat` 파일을 더블 클릭하거나 명령 프롬프트에서 실행합니다.
+1. 스크립트를 `backup_chaindata.bat` 파일로 저장
+2. 7-Zip 설치 (공식 웹사이트에서 다운로드 및 설치)
+3. `backup_chaindata.bat` 파일 실행 (더블 클릭 또는 명령 프롬프트에서 실행)
 
-### 스크립트
+#### 스크립트
 
 ```
 batch코드 복사@echo off
@@ -73,8 +73,6 @@ echo Creating ZIP archive...
 
 REM Perform split compression using 7-Zip
 echo Performing split compression...
-
-REM Create the split archive
 7z a -tzip -v%SPLIT_SIZE% "%ARCHIVE_PATH%_part%SPLIT_EXT%" "%TEMP_ARCHIVE%"
 
 REM Check if split files are created and if so, clean up temporary archive
@@ -91,22 +89,22 @@ echo All tasks are completed.
 pause
 ```
 
-## 2\. 복원 스크립트
+### 2\. 복원 스크립트 \(`fetchAupdate_chaindata.bat`)
 
-이 배치 파일 스크립트는 GitHub에서 백업된 파일을 다운로드하고, ZIP 파일로 복원합니다.
+이 스크립트는 GitHub에서 체인 데이터 파일을 다운로드하고 복원합니다.
 
-### 기능
+#### 기능
 
-* GitHub에서 백업된 파일을 다운로드합니다.
-* 다운로드한 파일을 결합하여 ZIP 파일을 생성합니다.
-* PowerShell을 사용하여 ZIP 파일을 복원합니다.
+* GitHub에서 백업된 파일을 다운로드
+* 다운로드한 파일을 결합하여 ZIP 파일 생성
+* PowerShell을 사용하여 ZIP 파일 복원
 
-### 사용 방법
+#### 사용 방법
 
-1. **스크립트 저장:** 아래의 스크립트를 `restore.bat` 파일로 저장합니다.
-2. **스크립트 실행:** `restore.bat` 파일을 더블 클릭하거나 명령 프롬프트에서 실행합니다.
+1. 스크립트를 `fetchAupdate_chaindata.bat` 파일로 저장
+2. 스크립트 실행 (더블 클릭 또는 명령 프롬프트에서 실행)
 
-### 스크립트
+#### 스크립트
 
 ```
 batch코드 복사@echo off
@@ -154,25 +152,45 @@ if not exist "%appdata_folder%" (
 
 REM 모든 분할 파일을 하나의 파일로 병합합니다.
 set combined_zip="%temp_dir%\combined.zip"
-copy /b %temp_dir%\%file_prefix%.001 + %temp_dir%\%file_prefix%.002 + %temp_dir%\%file_prefix%.003 + %temp_dir%\%file_prefix%.004 "%combined_zip%"
+del "%combined_zip%" 2>nul
+for /L %%i in (1,1,%part_number%) do (
+    set part_number_padded=00%%i
+    set part_number_padded=!part_number_padded:~-3!
+    set "current_part=%temp_dir%\%file_prefix%!part_ext!!part_number_padded!"
+    if exist "!current_part!" (
+        if exist "%combined_zip%" (
+            copy /b "%combined_zip%" + "!current_part!" >nul
+        ) else (
+            copy /b "!current_part!" "%combined_zip%" >nul
+        )
+    )
+)
 
-REM PowerShell을 사용하여 압축 해제
-powershell -Command "Expand-Archive -Path '%combined_zip%' -DestinationPath '%appdata_folder%' -Force"
+REM 병합된 ZIP 파일에서 temporary_archive.zip을 압축 해제합니다.
+set temp_archive="%temp_dir%\temporary_archive.zip"
+echo Extracting temporary_archive.zip from combined.zip...
+powershell -Command "Expand-Archive -Path '%combined_zip%' -DestinationPath '%temp_dir%' -Force"
 
-REM 압축 해제 후 파일 및 임시 디렉토리 삭제
+REM temporary_archive.zip을 압축 해제
+powershell -Command "Expand-Archive -Path '%temp_archive%' -DestinationPath '%appdata_folder%' -Force"
+
+REM 압축 해제 후 파일 및 임시 파일 삭제
 del "%combined_zip%"
+del "%temp_archive%"
 rmdir /s /q "%temp_dir%"
 
 echo Extraction complete.
 pause
 ```
 
-## 주의 사항
+### 주의 사항
 
 * 두 스크립트 모두 7-Zip과 PowerShell이 필요합니다.
-* `restore.bat` 파일을 실행하기 전에 GitHub에서 사용하는 URL과 파일 이름을 적절히 설정해야 합니다.
-* 백업 및 복원 과정에서 중요한 데이터를 다루기 때문에, 실제 환경에서 사용하기 전에 테스트를 충분히 진행하는 것이 좋습니다.
+* `fetchAupdate_chaindata.bat` 파일을 실행하기 전에 GitHub에서 사용하는 URL과 파일 이름을 적절히 설정해야 합니다.
+* 백업 및 복원 과정에서 중요한 데이터를 다루기 때문에, 실제 환경에서 사용하기 전에 충분한 테스트가 필요합니다.
 
-## 기여 및 지원
+### 전체 요약
 
-이 문서에 기여하거나 수정이 필요할 경우, [문서에 기여하기](https://github.com/username/repository)에서 제안할 수 있습니다. 추가적인 지원이 필요하면 문제를 [이슈 트래커](https://github.com/username/repository/issues)에 등록해 주세요.
+* **백업 스크립트 (`backup_chaindata.bat`)**: Factorn 데이터를 압축하고 지정된 크기로 분할하여 백업합니다.
+* **복원 스크립트 (`fetchAupdate_chaindata.bat`)**: GitHub에서 백업된 파일을 다운로드하고, ZIP 파일로 복원합니다.
+* 두 스크립트 모두 7-Zip과 PowerShell을 사용하며, 사용 전에 충분한 테스트가 필요합니다.
